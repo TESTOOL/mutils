@@ -1,5 +1,5 @@
 /*
-* Copyright 2011 E.J.I.E., S.A.
+* Copyright 2012 E.J.I.E., S.A.
 *
 * Licencia con arreglo a la EUPL, Versión 1.1 exclusivamente (la «Licencia»);
 * Solo podrá usarse esta obra si se respeta la Licencia.
@@ -28,8 +28,12 @@ import javax.servlet.http.HttpSessionListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextImpl;
 
 import com.ejie.x38.log.LogConstants;
+import com.ejie.x38.security.UserCredentials;
+import com.ejie.x38.util.ManagementUrl;
 
 /**
  * 
@@ -77,6 +81,10 @@ public class UdaListener implements ServletContextListener, HttpSessionListener,
 		StringBuilder logMessage = new StringBuilder();
 		HttpSession httpSession = null;
 		
+		SecurityContextImpl securityContext  = null;
+		UserCredentials credentials = null; 
+		Authentication authentication = null;
+		
 	    //Used to get the IP of the new request for the loggin System  
 		MDC.put("IPClient", request.getRemoteAddr());
 		//Flag to mark http acces
@@ -88,21 +96,34 @@ public class UdaListener implements ServletContextListener, HttpSessionListener,
 			
 			if (httpServletRequest.getSession(false) != null){
 				httpSession = ((HttpServletRequest) request).getSession(false);
-				if (httpSession.getAttribute("UserName") != null){
+				
+				//Getting Authentication credentials
+				securityContext = ((SecurityContextImpl)httpSession.getAttribute("SPRING_SECURITY_CONTEXT"));
+				
+				if (securityContext != null){					
+					authentication = securityContext.getAuthentication();
+					if (authentication != null){
+						credentials = (UserCredentials)authentication.getCredentials();
+					}
+				}				
+				
+				if(credentials != null){
+					MDC.put(LogConstants.USER,credentials.getUserName());
+					MDC.put(LogConstants.SESSION,credentials.getUidSession());
+					MDC.put(LogConstants.POSITION,credentials.getPosition());
+					
+				} else if (httpSession.getAttribute("UserName") != null){
 					MDC.put(LogConstants.USER,(String)httpSession.getAttribute("UserName"));
 					MDC.put(LogConstants.SESSION,(String)httpSession.getAttribute("UidSession"));
 					MDC.put(LogConstants.POSITION,(String)httpSession.getAttribute("Position"));
 				}
 			}
+			
 			//Compose the acceses trace logs
 			logMessage.append("The application has just received a HTTP request from the IP ");
 			logMessage.append(request.getRemoteAddr());
-			logMessage.append(" to the URL http://");
-			logMessage.append(httpServletRequest.getServerName());
-			logMessage.append(":");
-			logMessage.append(httpServletRequest.getServerPort());
-			logMessage.append(httpServletRequest.getContextPath());
-			logMessage.append(httpServletRequest.getServletPath());
+			logMessage.append(" to the URL ");
+			logMessage.append(ManagementUrl.getUrl(httpServletRequest));
 		} else {
 			logMessage.append("The application has just received a non-HTTP request from the IP ");
 			logMessage.append(request.getRemoteAddr());
@@ -125,12 +146,8 @@ public class UdaListener implements ServletContextListener, HttpSessionListener,
 			//Compose the acceses trace logs
 			logMessage.append("The application has responded a HTTP request from the IP ");
 			logMessage.append(request.getRemoteAddr());
-			logMessage.append(" to the URL http://");
-			logMessage.append(httpServletRequest.getServerName());
-			logMessage.append(":");
-			logMessage.append(httpServletRequest.getServerPort());
-			logMessage.append(httpServletRequest.getContextPath());
-			logMessage.append(httpServletRequest.getRequestURI());
+			logMessage.append(" to the URL ");
+			logMessage.append(ManagementUrl.getUrl(httpServletRequest));
 		} else {
 			logMessage.append("The application has responded a non-HTTP request from the IP ");
 			logMessage.append(request.getRemoteAddr());
