@@ -33,6 +33,7 @@ import org.springframework.util.Assert;
  * @author UDA
  *
  */
+@Deprecated
 public class XlnetAuthenticationProvider implements AuthenticationProvider,
 		Ordered, InitializingBean {
 	private static final Logger logger = LoggerFactory

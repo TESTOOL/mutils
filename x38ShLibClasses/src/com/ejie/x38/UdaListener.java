@@ -32,7 +32,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextImpl;
 
 import com.ejie.x38.log.LogConstants;
-import com.ejie.x38.security.UserCredentials;
+import com.ejie.x38.security.Credentials;
 import com.ejie.x38.util.ManagementUrl;
 
 /**
@@ -45,7 +45,7 @@ import com.ejie.x38.util.ManagementUrl;
  * 
  */
 public class UdaListener implements ServletContextListener, HttpSessionListener, ServletRequestListener{
-
+	
 	Logger logger =  LoggerFactory.getLogger(UdaListener.class);
 	
 	@Override
@@ -62,14 +62,18 @@ public class UdaListener implements ServletContextListener, HttpSessionListener,
 	public void sessionCreated(HttpSessionEvent sessionEvent) {
 		logger.debug( "Session "+sessionEvent.getSession().getId()+" has been created");
 		sessionEvent.getSession().setAttribute("udaTimeStamp", System.currentTimeMillis());
-		sessionEvent.getSession().setAttribute("udaVirgin", Boolean.TRUE);
 	}
 
 	@Override
 	public void sessionDestroyed(HttpSessionEvent sessionEvent) {
 		logger.debug( "Session "+sessionEvent.getSession().getId()+" has been destroyed");
+		
+//		HttpSession session = sessionEvent.getSession();
+//        ApplicationContext ctx = WebApplicationContextUtils.getWebApplicationContext(session.getServletContext());
+//        StockUdaSecurityPadlocksImpl stockUdaSecurityPadlocks = (StockUdaSecurityPadlocksImpl)ctx.getBean("stockUdaSecurityPadlocks");
+//		stockUdaSecurityPadlocks.deleteCredentialLoadObject(sessionEvent.getSession().getId());
+		
 		sessionEvent.getSession().removeAttribute("udaTimeStamp");
-		sessionEvent.getSession().removeAttribute("udaVirgin");
 	}
 	
 	@Override
@@ -82,7 +86,7 @@ public class UdaListener implements ServletContextListener, HttpSessionListener,
 		HttpSession httpSession = null;
 		
 		SecurityContextImpl securityContext  = null;
-		UserCredentials credentials = null; 
+		Credentials credentials = null; 
 		Authentication authentication = null;
 		
 	    //Used to get the IP of the new request for the loggin System  
@@ -103,7 +107,7 @@ public class UdaListener implements ServletContextListener, HttpSessionListener,
 				if (securityContext != null){					
 					authentication = securityContext.getAuthentication();
 					if (authentication != null){
-						credentials = (UserCredentials)authentication.getCredentials();
+						credentials = (Credentials)authentication.getCredentials();
 					}
 				}				
 				

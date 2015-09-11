@@ -15,7 +15,6 @@
 */
 package com.ejie.x38.security;
 
-import java.io.IOException;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,6 +32,7 @@ import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.UnsatisfiedDependencyException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -56,10 +56,13 @@ public class PerimetralSecurityWrapperMockImpl implements
 
 	private ArrayList<HashMap<String,Object>> principal;
 	private String userChangeUrl;
+	private Object specificCredentials = null;
+	private String specificCredentialsName = null;
+	private boolean destroySessionSecuritySystem = false;
 
-	public String validateSession(HttpServletRequest httpRequest, HttpServletResponse response) throws IOException{
+	public String validateSession(HttpServletRequest httpRequest, HttpServletResponse response) throws SecurityException{
 		
-		UserCredentials credentials = null; 
+		Credentials credentials = null; 
 		Authentication authentication = null;
 		StringBuilder udaMockSessionId = new StringBuilder();
 		HttpSession httpSession = httpRequest.getSession(true);
@@ -80,13 +83,13 @@ public class PerimetralSecurityWrapperMockImpl implements
 		if (udaMockUserName != null){
 			udaMockSessionId.append(udaMockUserName.getValue()); 
 			udaMockSessionId.append("-");
-			udaMockSessionId.append(httpRequest.getSession(true).getId());
+			udaMockSessionId.append(httpRequest.getSession(false).getId());
 			
 			//Getting Authentication credentials
 			authentication = SecurityContextHolder.getContext().getAuthentication();
 			
 			if (authentication != null){
-				credentials = (UserCredentials)authentication.getCredentials();
+				credentials = (Credentials)authentication.getCredentials();
 			}
 					
 			//If the sessionId changed, disable XLNET caching
@@ -126,7 +129,6 @@ public class PerimetralSecurityWrapperMockImpl implements
 		return (String)user.get("position");		
 	}
 	
-	//encuentrame
 	public String getUdaValidateSessionId(HttpServletRequest httpRequest) {
 		StringBuilder udaMockSessionId = new StringBuilder();
 		
@@ -151,9 +153,30 @@ public class PerimetralSecurityWrapperMockImpl implements
 			}
 		}
 		
-		httpRequest.getSession(false).setAttribute("userName", udaMockUserName.getValue());
+		if(httpRequest.getSession(false).getAttribute("fullName") == null){
+			HashMap<String, Object> user = getUserData(principal, udaMockUserName.getValue());
+		
+			httpRequest.getSession(false).setAttribute("fullName", (String)user.get("fullName"));
+		}
 		
 		return udaMockUserName.getValue();
+	}
+	
+	@SuppressWarnings("unchecked")
+	public HashMap<String, String> getUserDataInfo(HttpServletRequest httpRequest, boolean isCertificate){
+		//falta la especificacion de datos de las credenciles para el mock
+		HashMap<String, Object> user = getUserData(principal, getUserConnectedUserName(httpRequest));
+		HashMap<String, String> userData = new HashMap<String, String>();
+		
+		if(isCertificate && user.get("subjectCert") != null){
+			userData = (HashMap<String, String>)user.get("subjectCert");
+		}
+		
+		userData.put("name", (String)user.get("name"));
+		userData.put("surname", (String)user.get("surname"));
+		userData.put("fullName", (String)user.get("fullName"));
+		
+		return (userData);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -186,7 +209,7 @@ public class PerimetralSecurityWrapperMockImpl implements
 	}
 	
 	public String getURLLogin(String originalURL, boolean ajax) {
-		String userName = null;
+		String dataUsers = null;
 		ArrayList<HashMap<String, String>> usersNames = new ArrayList<HashMap<String, String>> ();
 		Iterator<HashMap<String,Object>> usersIterator = principal.iterator();
 		HashMap<String, String> auxObject = new HashMap<String, String>();
@@ -200,10 +223,9 @@ public class PerimetralSecurityWrapperMockImpl implements
 		
 		while ( usersIterator.hasNext() ){
 			auxObject = new HashMap<String, String>();
-			user = usersIterator.next();
-			userName = (String)user.get("userName");
-			auxObject.put("i18nCaption", userName);
-			auxObject.put("value", userName);
+			user = usersIterator.next();			
+			auxObject.put("i18nCaption", (String)user.get("fullName"));
+			auxObject.put("value", (String)user.get("userName"));
 			
 			usersNames.add(auxObject);
 		}
@@ -212,7 +234,7 @@ public class PerimetralSecurityWrapperMockImpl implements
 			jsonGenerator = jsonFactory.createJsonGenerator(sw);
 			mapper.writeValue(jsonGenerator, usersNames);
 			sw.close();
-			userName = sw.getBuffer().toString();
+			dataUsers = sw.getBuffer().toString();
 			
 			//Deleting the objects of the serialization
 			jsonGenerator = null;
@@ -229,9 +251,9 @@ public class PerimetralSecurityWrapperMockImpl implements
 		}
 		
 		if (!ajax){
-			return(webApplicationContext.getServletContext().getContextPath()+"/mockLoginPage?mockUrl="+originalURL+"&userNames="+userName);
+			return(webApplicationContext.getServletContext().getContextPath()+"/mockLoginPage?mockUrl="+originalURL+"&userNames="+dataUsers);
 		} else {
-			return(webApplicationContext.getServletContext().getContextPath()+"/mockLoginAjaxPage?mockUrl="+originalURL+"&userNames="+userName);
+			return(webApplicationContext.getServletContext().getContextPath()+"/mockLoginAjaxPage?mockUrl="+originalURL+"&userNames="+dataUsers);
 		}
 	}
 
@@ -299,6 +321,28 @@ public class PerimetralSecurityWrapperMockImpl implements
 	}
 	
 	//Getters & Setters
+	public Object getSpecificCredentials(){
+		return this.specificCredentials;
+	}
+	
+	public Credentials getCredentials(){
+		if (specificCredentialsName == null){
+			return new UserCredentials();
+		} else {
+			try {
+				return (Credentials)Class.forName(specificCredentialsName).newInstance();
+			}catch (Exception e) {
+				logger.error("getCredentials(): The object specified to the parameter \"SpecificCredentials\" is not correct. The object has not been instantiated", e);
+				SecurityException sec = new SecurityException("getCredentials(): The object specified to the parameter \"SpecificCredentials\" is not correct. The object has not been instantiated", e.getCause());
+				throw sec;
+			}
+		}
+	}
+	
+	public boolean getDestroySessionSecuritySystem(){
+		return this.destroySessionSecuritySystem;
+	}
+	
 	public ArrayList<HashMap<String,Object>> getPrincipal() {
 		return principal;
 	}
@@ -309,13 +353,18 @@ public class PerimetralSecurityWrapperMockImpl implements
 		//Data of User Anonymous
 		HashMap<String, Object> userAnonymous = new HashMap<String, Object>(); 
 		ArrayList<String> roles = new ArrayList<String>();
+		HashMap<String,String> subjectCert = new HashMap<String,String>();
 		roles.add("UDAANONYMOUS");
 		
 		userAnonymous.put("userName", "udaAnonymousUser");
+		userAnonymous.put("name", "uda");
+		userAnonymous.put("surName", "Anonymous User");
+		userAnonymous.put("fullName", "Uda Anonymous User");
 		userAnonymous.put("nif", "00000000a");
 		userAnonymous.put("policy", "udaAnonymousPolicy");
 		userAnonymous.put("position", "udaAnonymousPosition");
 		userAnonymous.put("isCertificate", "no");
+		userAnonymous.put("subjectCert",subjectCert);
 		userAnonymous.put("roles", roles);
 		
 		this.principal.add(userAnonymous);
@@ -328,5 +377,27 @@ public class PerimetralSecurityWrapperMockImpl implements
 	
 	public void setUserChangeUrl(String userChangeUrl) {
 		this.userChangeUrl = userChangeUrl;
-	}	
+	}
+	
+	public void setSpecificCredentials(Object credentials){
+		Object specificCredentials = credentials; 
+		
+		try{
+			if(specificCredentials instanceof String){
+				specificCredentials = Class.forName((String)credentials).newInstance();
+			}
+			if(specificCredentials instanceof Credentials){
+				this.specificCredentialsName = specificCredentials.getClass().getName();				
+			} else {
+				throw new UnsatisfiedDependencyException("security-config", "PerimetralSecurityWrapperN38Impl", "setSpecificCredentials", "The specified object is not correct to the parameter  \"SpecificCredentials\". The object must be instace of String (className of a Class than extend the \"Credentials\" Class) or one Bean of a Class than extend the \"Credentials\" Class.");
+			}
+		} catch (Exception e) {
+			throw new UnsatisfiedDependencyException("security-config", "PerimetralSecurityWrapperN38Impl", "setSpecificCredentials", "The specified object is not correct to the parameter  \"SpecificCredentials\". The object must be instace of String (className of a Class than extend the \"Credentials\" Class) or one Bean of a Class than extend the \"Credentials\" Class.");
+		} finally {
+			this.specificCredentials = specificCredentials;
+		}
+	}
+		
+	public void setDestroySessionSecuritySystem(boolean destroySessionSecuritySystem){
+	}
 }
